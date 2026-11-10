@@ -8,6 +8,7 @@ One userscript that adds features to WMT Scheduler. Each feature can be turned o
 | Hide Print button | Worksheet View | Hides the Print button next to the date. |
 | Highlight my initials | Worksheet View | Your initials in bold, and rows that include you shaded green. |
 | Schedule View helper | Schedule View | Highlights your row, days off and leave, and who else is off on those days. Adds an "Off with me" summary. |
+| Favorite co-workers | Every page | Shows the initials of people you choose in their own color (red by default). |
 | Calendar export | My Schedule | Preview your pay period and download it as `.ics` (Google, Outlook, Apple) or `.csv`. |
 | Auto sign-in | Sign-in pages | Off by default. Clicks through the warning page and fills in the sign-in. |
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WMTTools
 // @namespace    https://3datc.com
-// @version      2026.11.10
+// @version      2026.11.10.1
 // @description  Add-ons for WMT Scheduler: next payday, your initials highlighted, Schedule View days-off helper, calendar export (.ics / .csv), and optional auto sign-in.
 // @author       3dATC|BLAksky
 // @match        https://wmtscheduler.faa.gov/*
@@ -574,6 +574,96 @@
                 h('div', { style: 'font-weight:bold; margin-bottom:4px;' }, 'Off with me'), summary));
         },
     });
+
+    // ── Favorite co-workers ───────────────────────────────────────────────────
+    // Registered after the Schedule View helper on purpose: it then also colors
+    // the initials that helper writes into cells and its "Off with me" table.
+    {
+        const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'OPTION', 'SELECT', 'TEXTAREA', 'INPUT']);
+        const SKIP_INSIDE = '#wmtt-settings, #wmtt-notices';
+
+        // Three places initials appear in WMT, from most to least common:
+        //  1. A cell or link that is just the initials, maybe decorated:
+        //     "PS", "IV$", "(PB)", "(GU-OM)", "PB (LV)". It must be the element's
+        //     whole content, so section headings like "OT" aren't matched.
+        const SOLO = /^\(?([A-Z]{2,3})(?:-[A-Z]+)?\)?\$?(?:\s*\(LV\))?$/;
+        //  2. Text that starts with "XX - ": Schedule View names
+        //     ("AX - Lastname, First") and shift notes ("DR - OT List Exhausted")
+        const PREFIX = /^\s*([A-Z]{2,3}) - /;
+        //  3. A dash-separated list of initials: Team Brief " - YQ - PS - ML - "
+        const LIST = /^[\s-]*[A-Z]{2,3}(?:\s*-\s*[A-Z]{2,3})+[\s-]*$/;
+        // Anything else (free text like "PS working OT for AX.") is left alone,
+        // so favorites whose initials are also words (OT, ON, TO) don't match there.
+
+        // [start, end] positions of favorite initials inside one text node
+        function findRanges(node, favorites) {
+            const text = node.nodeValue;
+            const trimmed = text.trim();
+            let m = trimmed.match(SOLO);
+            if (m) {
+                if (node.parentElement.textContent.trim() !== trimmed) return [];
+                if (!favorites.has(m[1])) return [];
+                const start = text.indexOf(m[1]);
+                return [[start, start + m[1].length]];
+            }
+            m = text.match(PREFIX);
+            if (m) {
+                if (!favorites.has(m[1])) return [];
+                const start = text.indexOf(m[1]);
+                return [[start, start + m[1].length]];
+            }
+            if (LIST.test(text)) {
+                return [...text.matchAll(/[A-Z]{2,3}/g)]
+                    .filter(x => favorites.has(x[0]))
+                    .map(x => [x.index, x.index + x[0].length]);
+            }
+            return [];
+        }
+
+        // Wraps each range in <span class="wmtt-fav">, last first so earlier positions stay valid
+        function wrapRanges(node, ranges) {
+            for (const [start, end] of ranges.reverse()) {
+                const middle = node.splitText(start);
+                middle.splitText(end - start);
+                middle.replaceWith(h('span', { class: 'wmtt-fav' }, middle.textContent));
+            }
+        }
+
+        defineModule({
+            id: 'favorites',
+            name: 'Favorite co-workers',
+            description: 'Every WMT page: shows the initials of the people you list in their own color.',
+            pages: [hostPage(WMT_HOST)],
+            settings: [
+                { key: 'initials', label: 'Initials', type: 'list', default: [], placeholder: 'e.g. PS, JL, KH',
+                  help: 'Comma separated.' },
+                { key: 'color', label: 'Color', type: 'color', default: '#ff0000' },
+                { key: 'bold', label: 'Also bold', type: 'checkbox', default: false },
+            ],
+            run(ctx) {
+                const favorites = new Set(ctx.settings.initials.map(i => i.trim().toUpperCase()).filter(Boolean));
+                if (!favorites.size) return;
+
+                GM_addStyle(`.wmtt-fav { color: ${ctx.settings.color} !important;` +
+                            `${ctx.settings.bold ? ' font-weight: bold !important;' : ''} }`);
+
+                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+                    acceptNode: node => {
+                        const parent = node.parentElement;
+                        if (!parent || SKIP_TAGS.has(parent.tagName) || parent.closest(SKIP_INSIDE)) return NodeFilter.FILTER_REJECT;
+                        return /[A-Z]{2}/.test(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+                    },
+                });
+                // Collect first, then change: editing while walking confuses the walker
+                const hits = [];
+                for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                    const ranges = findRanges(node, favorites);
+                    if (ranges.length) hits.push([node, ranges]);
+                }
+                hits.forEach(([node, ranges]) => wrapRanges(node, ranges));
+            },
+        });
+    }
 
     // ── Calendar export (My Schedule → .ics / .csv) ──────────────────────────
     {
