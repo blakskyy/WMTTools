@@ -7,6 +7,7 @@ One userscript that adds features to WMT Scheduler. Each feature can be turned o
 | Next payday | Worksheet View | Next payday, the pay period it covers, and a countdown. Worked out from the every-other-Tuesday pay schedule, so it never needs yearly updates. |
 | Hide Print button | Worksheet View | Hides the Print button next to the date. |
 | Mobile layout | Worksheet View | On phones: opens fitted to the screen, a clean header with button-style menu, the 14 days in two rows, and the tables in one column in the order you choose. Desktop is unchanged. |
+| Hide menu buttons | Every page | Hides menu buttons you don't use (Help, Bidding, Settings, Reports and Logout by default) on phones, or on desktop too if you choose. The WMTTools button always stays. |
 | Highlight my initials | Worksheet View | Your initials in bold, and rows that include you shaded green. |
 | Schedule View helper | Schedule View | Highlights your row, days off and leave, and who else is off on those days. Adds an "Off with me" summary. |
 | Favorite co-workers | Every page | Shows the initials of people you choose in their own color (red by default). |

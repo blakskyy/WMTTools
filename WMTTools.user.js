@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WMTTools
 // @namespace    https://3datc.com
-// @version      2026.11.10.6
+// @version      2026.11.10.7
 // @description  Add-ons for WMT Scheduler: next payday, your initials highlighted, Schedule View days-off helper, calendar export (.ics / .csv), and optional auto sign-in.
 // @author       3dATC|BLAksky
 // @match        https://wmtscheduler.faa.gov/*
@@ -429,6 +429,9 @@
     });
 
     // ── Mobile layout (Worksheet View) ─────────────────────────────────────────
+    // Screen width at or below which phone layouts apply (Mobile layout's default;
+    // Hide menu buttons reads the same setting)
+    const MOBILE_MAX_WIDTH = 900;
     {
         // The dashboard's sections, by the short names used in the "Table order" setting
         const SECTIONS = {
@@ -463,7 +466,7 @@
                          'the 14 days in two rows, a cleaner header and menu, and the tables in the order you choose.',
             pages: [wmtPage('Views/WorksheetView')],
             settings: [
-                { key: 'maxWidth', label: 'Use when the screen is at most (px) wide', type: 'number', default: 900, min: 0, step: 10,
+                { key: 'maxWidth', label: 'Use when the screen is at most (px) wide', type: 'number', default: MOBILE_MAX_WIDTH, min: 0, step: 10,
                   placeholder: 'blank = always', help: 'Phones are about 360–430 px wide, tablets 768–1024. Blank = always use it.' },
                 { key: 'order', label: 'Table order', type: 'list', default: DEFAULT_ORDER,
                   help: 'Comma separated, top to bottom: ' + Object.keys(SECTIONS).join(', ') +
@@ -502,7 +505,7 @@
                     td.mainlevel-nav { height: auto !important; padding: 6px 4px 4px; background: #eef2f7;
                                        border: 1px solid #d3dbe5; border-top: 0; }
                     /* Menu: an even grid of buttons, two rows on a phone */
-                    #chromemenu ul { display: grid !important; grid-template-columns: repeat(5, 1fr);
+                    #chromemenu ul { display: grid !important; grid-template-columns: repeat(var(--wmtt-menu-cols, 5), 1fr);
                                      gap: 4px; height: auto !important; }
                     #chromemenu ul li { display: block !important; float: none !important; }
                     #chromemenu ul li a { float: none !important; display: block; padding: 7px 2px !important; text-align: center;
@@ -555,6 +558,40 @@
             },
         });
     }
+
+    // ── Hide menu buttons ─────────────────────────────────────────────────────
+    defineModule({
+        id: 'hideMenuButtons',
+        name: 'Hide menu buttons',
+        description: 'Every WMT page: hides menu bar buttons you don\'t use. On phones only, unless you choose desktop too. ' +
+                     `The ${APP_NAME} button always stays, so you can get back to these settings.`,
+        pages: [hostPage(WMT_HOST)],
+        settings: [
+            { key: 'buttons', label: 'Hide these buttons', type: 'list',
+              default: ['Help', 'Bidding', 'Settings', 'Reports', 'Logout'],
+              help: 'Comma separated, as written on the button, e.g. Home, Logout, Requests, Views, Reports, Settings, Bidding, Help.' },
+            { key: 'desktopToo', label: 'Hide on desktop too', type: 'checkbox', default: false,
+              help: `Off: hidden only on screens narrower than the Mobile layout width (${MOBILE_MAX_WIDTH} px unless you changed it).` },
+        ],
+        run(ctx) {
+            const hide = new Set(ctx.settings.buttons.map(b => b.trim().toLowerCase()));
+            const items = [...document.querySelectorAll('#chromemenu ul > li')];
+            if (!items.length || !hide.size) return;
+
+            let shown = 0;
+            for (const li of items) {
+                const label = textOf(li).toLowerCase();
+                if (hide.has(label) && !li.querySelector('#wmtt-menu-link')) li.classList.add('wmtt-menu-hidden');
+                else shown++;
+            }
+            // The phone menu grid (Mobile layout) uses this to fill its rows evenly
+            document.querySelector('#chromemenu ul').style.setProperty('--wmtt-menu-cols', String(Math.min(shown, 5)));
+
+            const rule = '#chromemenu ul > li.wmtt-menu-hidden { display: none !important; }';
+            const maxWidth = store.get(settingKey('mobileWorksheet', 'maxWidth'), MOBILE_MAX_WIDTH);
+            addStyle(ctx.settings.desktopToo || !maxWidth ? rule : `@media (max-width: ${maxWidth}px) { ${rule} }`);
+        },
+    });
 
     // ── Highlight my initials (Worksheet View) ───────────────────────────────
     {
