@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WMTTools
 // @namespace    https://3datc.com
-// @version      2026.11.10.1
+// @version      2026.11.10.2
 // @description  Add-ons for WMT Scheduler: next payday, your initials highlighted, Schedule View days-off helper, calendar export (.ics / .csv), and optional auto sign-in.
 // @author       3dATC|BLAksky
 // @match        https://wmtscheduler.faa.gov/*
@@ -635,7 +635,7 @@
             description: 'Every WMT page: shows the initials of the people you list in their own color.',
             pages: [hostPage(WMT_HOST)],
             settings: [
-                { key: 'initials', label: 'Initials', type: 'list', default: [], placeholder: 'e.g. PS, JL, KH',
+                { key: 'initials', label: 'Initials', type: 'list', default: [], placeholder: 'e.g. AA, BB, CC',
                   help: 'Comma separated.' },
                 { key: 'color', label: 'Color', type: 'color', default: '#ff0000' },
                 { key: 'bold', label: 'Also bold', type: 'checkbox', default: false },
