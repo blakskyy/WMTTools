@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WMTTools
 // @namespace    https://3datc.com
-// @version      2026.11.10.5
+// @version      2026.11.10.6
 // @description  Add-ons for WMT Scheduler: next payday, your initials highlighted, Schedule View days-off helper, calendar export (.ics / .csv), and optional auto sign-in.
 // @author       3dATC|BLAksky
 // @match        https://wmtscheduler.faa.gov/*
@@ -429,66 +429,132 @@
     });
 
     // ── Mobile layout (Worksheet View) ─────────────────────────────────────────
-    defineModule({
-        id: 'mobileWorksheet',
-        name: 'Mobile layout',
-        description: 'Worksheet View: on narrow screens like phones, puts the tables in one column ' +
-                     'instead of side by side, and wraps the 14 days into two rows, so there\'s less sideways scrolling.',
-        pages: [wmtPage('Views/WorksheetView')],
-        settings: [
-            { key: 'maxWidth', label: 'Use when the screen is at most (px) wide', type: 'number', default: 900, min: 0, step: 10,
-              placeholder: 'blank = always', help: 'Phones are about 360–430 px wide, tablets 768–1024. Blank = always use it.' },
-        ],
-        run(ctx) {
-            // The page lays out its parts as table cells side by side. Turning those
-            // cells into blocks stacks them; the tables inside keep their own layout.
-            const stack = (...tables) => tables.flatMap(t => [t, `${t} > tbody`, `${t} > tbody > tr`, `${t} > tbody > tr > td`]).join(',\n');
-            const css = `
-                ${stack('#WorksheetViewHeader', '#WorksheetViewDashBoard')} {
-                    display: block; width: 100% !important; box-sizing: border-box;
+    {
+        // The dashboard's sections, by the short names used in the "Table order" setting
+        const SECTIONS = {
+            shifts: 'ScheduledShifts', rdo: 'ControllersOnRDO', requests: 'tblShiftChange', swaps: 'tblXTECTE',
+            sup: 'tblSupRequests', notes: 'ShiftNotesForDay', detail: 'ControllersOnDetailShifts',
+            ot: 'ControllersOnOTShifts', brief: 'TeamBrief', furlough: 'ControllersOnFurlough',
+        };
+        const DEFAULT_ORDER = ['shifts', 'rdo', 'requests', 'swaps', 'sup', 'notes', 'detail', 'ot', 'brief', 'furlough'];
+
+        // The dashboard is two columns of loose headings ("OT", a help icon, <br>)
+        // each followed by its table. Wrap every heading + table in its own box so the
+        // boxes can be reordered on phones. On desktop the boxes look the same as before.
+        function wrapSections(dashboard) {
+            for (const column of dashboard.rows[0].cells) {
+                let pending = [];
+                for (const node of [...column.childNodes]) {
+                    pending.push(node);
+                    if (node.nodeName === 'TABLE' && node.id) {
+                        const box = h('div', { class: 'wmtt-section', 'data-section': node.id });
+                        node.before(box);
+                        box.append(...pending);
+                        pending = [];
+                    }
                 }
-                #WorksheetViewHeader > tbody > tr > td { margin-bottom: 8px; }
+            }
+        }
 
-                /* Page header: "WMT Scheduler - facility" and "Welcome: name" are set never
-                   to wrap, which keeps the whole page wider than a phone */
-                td.title table td { display: block; width: auto !important; white-space: normal !important; padding-left: 10px; }
-                /* Menu bar: let the items wrap onto a second line */
-                #chromemenu ul { white-space: normal !important; height: auto !important; }
-                #chromemenu ul li { display: inline-block !important; float: none !important; }
-                #wmtt-payday { float: none !important; width: 100% !important; margin-bottom: 8px; }
-                #tblTopGuidelines { width: 100% !important; margin: 0 !important; }
+        defineModule({
+            id: 'mobileWorksheet',
+            name: 'Mobile layout',
+            description: 'Worksheet View on narrow screens like phones: one column instead of side by side, ' +
+                         'the 14 days in two rows, a cleaner header and menu, and the tables in the order you choose.',
+            pages: [wmtPage('Views/WorksheetView')],
+            settings: [
+                { key: 'maxWidth', label: 'Use when the screen is at most (px) wide', type: 'number', default: 900, min: 0, step: 10,
+                  placeholder: 'blank = always', help: 'Phones are about 360–430 px wide, tablets 768–1024. Blank = always use it.' },
+                { key: 'order', label: 'Table order', type: 'list', default: DEFAULT_ORDER,
+                  help: 'Comma separated, top to bottom: ' + Object.keys(SECTIONS).join(', ') +
+                        '. Tables you leave out go at the end.' },
+            ],
+            run(ctx) {
+                const dashboard = document.getElementById('WorksheetViewDashBoard');
+                if (dashboard) wrapSections(dashboard);
 
-                /* 14 days → two rows of 7 */
-                #WorksheetViewDayStrip { width: 100% !important; }
-                #WorksheetViewDayStrip > tbody > tr { display: flex; flex-wrap: wrap; }
-                #WorksheetViewDayStrip > tbody > tr > td { flex: 0 0 calc(100% / 7); min-width: 0; box-sizing: border-box;
-                                                           padding: 4px 0; font-size: .75em; overflow-wrap: anywhere; }
+                // Each box's place in the list (unlisted ones after, in page order)
+                const order = ctx.settings.order.map(k => k.trim().toLowerCase());
+                document.querySelectorAll('.wmtt-section').forEach(box => {
+                    const key = Object.keys(SECTIONS).find(k => SECTIONS[k] === box.dataset.section);
+                    const place = order.indexOf(key);
+                    box.style.order = place === -1 ? 100 : place;   // only matters on phones (flex layout below)
+                });
 
-                /* Every table full width; wide Requests tables scroll inside themselves */
-                #WorksheetViewDashBoard table { width: 100% !important; }
-                /* Long words in OT reasons and notes may break instead of widening the page */
-                #ControllersOnOTShifts td td:nth-child(4), #ShiftNotesForDay td { overflow-wrap: anywhere; }
-                /* (capped at the screen width, or they'd still push the whole page wider) */
-                #tblShiftChange, #tblXTECTE, #tblSupRequests { display: block; overflow-x: auto; max-width: calc(100vw - 48px); }
-                #WorksheetViewDashBoard > tbody > tr > td + td { margin-top: 16px; }
-                body { -webkit-text-size-adjust: 100%; }
+                const css = `
+                    body { -webkit-text-size-adjust: 100%; }
 
-                /* Anything still sticking out sideways (even invisible, like WMT's closed
-                   menu dropdowns) makes phone browsers start zoomed out. Clip it instead. */
-                html, body { overflow-x: hidden !important; max-width: 100%; }
-                .dropmenudiv:not([style*="visible"]) { left: 0 !important; }
-            `;
-            const maxWidth = ctx.settings.maxWidth;
-            addStyle(maxWidth ? `@media (max-width: ${maxWidth}px) { ${css} }` : css);
+                    /* ---- Header and menu ----
+                       WMT draws them with fixed-size images (a 129px banner strip and corner
+                       pieces) that break up once the text wraps. Use plain colors instead. */
+                    table[background*="center.jpg"], table[background*="center2.jpg"] { background: none !important; }
+                    table[background*="center.jpg"] > tbody > tr > td:first-child,
+                    table[background*="center.jpg"] > tbody > tr > td:last-child,
+                    table[background*="center2.jpg"] > tbody > tr > td:first-child,
+                    table[background*="center2.jpg"] > tbody > tr > td:last-child,
+                    td[background*="shadow"] { display: none; }
+                    td.title[colspan] { height: auto !important; padding: 10px 12px !important; border-radius: 6px 6px 0 0;
+                                        background: linear-gradient(#4a9af0, #1b63c6); }
+                    td.title table td { display: block; width: auto !important; white-space: normal !important;
+                                        padding: 0 !important; text-indent: 0; }
+                    td.title table td.title { font-size: 22px; }
+                    td.title table td.footer { font-size: 12px; padding-top: 2px !important; }
+                    td.mainlevel-nav { height: auto !important; padding: 6px 4px 4px; background: #eef2f7;
+                                       border: 1px solid #d3dbe5; border-top: 0; }
+                    /* Menu: an even grid of buttons, two rows on a phone */
+                    #chromemenu ul { display: grid !important; grid-template-columns: repeat(5, 1fr);
+                                     gap: 4px; height: auto !important; }
+                    #chromemenu ul li { display: block !important; float: none !important; }
+                    #chromemenu ul li a { float: none !important; display: block; padding: 7px 2px !important; text-align: center;
+                                          font-size: 11px !important; color: #1b4f8a !important; background: #fff !important;
+                                          border: 1px solid #c9d3df; border-radius: 4px; white-space: nowrap; }
+                    table[background*="center2.jpg"] { background: #1b63c6 !important; border-radius: 4px; margin-top: 8px; }
 
-            // WMT's page says width=device-width but not initial-scale=1, so phones
-            // are free to open it zoomed out. Asking for 100% makes it open fitted to
-            // the screen; pinch-zoom still works. Desktop browsers ignore this tag.
-            let viewport = document.querySelector('meta[name="viewport"]');
-            if (!viewport) viewport = document.head.appendChild(h('meta', { name: 'viewport' }));
-            viewport.setAttribute('content', 'width=device-width, initial-scale=1');
-        },
-    });
+                    /* ---- Top of the page ---- */
+                    #WorksheetViewHeader, #WorksheetViewHeader > tbody, #WorksheetViewHeader > tbody > tr,
+                    #WorksheetViewHeader > tbody > tr > td { display: block; width: 100% !important; box-sizing: border-box; }
+                    #WorksheetViewHeader > tbody > tr > td { margin-bottom: 8px; }
+                    #wmtt-payday { float: none !important; width: 100% !important; margin-bottom: 8px; }
+                    #tblTopGuidelines { width: 100% !important; margin: 0 !important; }
+
+                    /* 14 days → two rows of 7 */
+                    #WorksheetViewDayStrip { width: 100% !important; }
+                    #WorksheetViewDayStrip > tbody > tr { display: flex; flex-wrap: wrap; }
+                    #WorksheetViewDayStrip > tbody > tr > td { flex: 0 0 calc(100% / 7); min-width: 0; box-sizing: border-box;
+                                                               padding: 4px 0; font-size: .75em; overflow-wrap: anywhere; }
+
+                    /* ---- Tables: one column, in the chosen order ----
+                       The two column cells step aside (display: contents) so every section
+                       box becomes an item of one list that "order" can rearrange. */
+                    #WorksheetViewDashBoard, #WorksheetViewDashBoard > tbody { display: block; width: 100% !important; }
+                    #WorksheetViewDashBoard > tbody > tr { display: flex; flex-direction: column; }
+                    #WorksheetViewDashBoard > tbody > tr > td { display: contents; }
+                    #WorksheetViewDashBoard > tbody > tr > td > br { display: none; }
+                    .wmtt-section { margin-bottom: 14px; }
+                    .wmtt-section > br:first-child { display: none; }
+                    #WorksheetViewDashBoard table { width: 100% !important; }
+                    /* Long words in OT reasons and notes may break instead of widening the page */
+                    #ControllersOnOTShifts td td:nth-child(4), #ShiftNotesForDay td { overflow-wrap: anywhere; }
+                    /* Wide Requests tables scroll inside themselves (capped, or they'd widen the page) */
+                    #tblShiftChange, #tblXTECTE, #tblSupRequests { display: block; overflow-x: auto; max-width: calc(100vw - 24px); }
+
+                    /* Anything still sticking out sideways (even invisible, like WMT's closed
+                       menu dropdowns) makes phone browsers start zoomed out. Clip it instead. */
+                    html, body { overflow-x: hidden !important; max-width: 100%; }
+                    .dropmenudiv:not([style*="visible"]) { left: 0 !important; }
+                `;
+                const maxWidth = ctx.settings.maxWidth;
+                addStyle(maxWidth ? `@media (max-width: ${maxWidth}px) { ${css} }` : css);
+
+                // WMT's page says width=device-width but not initial-scale=1, so phones
+                // are free to open it zoomed out. Asking for 100% makes it open fitted to
+                // the screen; pinch-zoom still works. Desktop browsers ignore this tag.
+                let viewport = document.querySelector('meta[name="viewport"]');
+                if (!viewport) viewport = document.head.appendChild(h('meta', { name: 'viewport' }));
+                viewport.setAttribute('content', 'width=device-width, initial-scale=1');
+            },
+        });
+    }
 
     // ── Highlight my initials (Worksheet View) ───────────────────────────────
     {
