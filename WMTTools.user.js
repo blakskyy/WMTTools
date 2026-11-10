@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WMTTools
 // @namespace    https://3datc.com
-// @version      2026.11.10.4
+// @version      2026.11.10.5
 // @description  Add-ons for WMT Scheduler: next payday, your initials highlighted, Schedule View days-off helper, calendar export (.ics / .csv), and optional auto sign-in.
 // @author       3dATC|BLAksky
 // @match        https://wmtscheduler.faa.gov/*
@@ -472,9 +472,21 @@
                 #tblShiftChange, #tblXTECTE, #tblSupRequests { display: block; overflow-x: auto; max-width: calc(100vw - 48px); }
                 #WorksheetViewDashBoard > tbody > tr > td + td { margin-top: 16px; }
                 body { -webkit-text-size-adjust: 100%; }
+
+                /* Anything still sticking out sideways (even invisible, like WMT's closed
+                   menu dropdowns) makes phone browsers start zoomed out. Clip it instead. */
+                html, body { overflow-x: hidden !important; max-width: 100%; }
+                .dropmenudiv:not([style*="visible"]) { left: 0 !important; }
             `;
             const maxWidth = ctx.settings.maxWidth;
             addStyle(maxWidth ? `@media (max-width: ${maxWidth}px) { ${css} }` : css);
+
+            // WMT's page says width=device-width but not initial-scale=1, so phones
+            // are free to open it zoomed out. Asking for 100% makes it open fitted to
+            // the screen; pinch-zoom still works. Desktop browsers ignore this tag.
+            let viewport = document.querySelector('meta[name="viewport"]');
+            if (!viewport) viewport = document.head.appendChild(h('meta', { name: 'viewport' }));
+            viewport.setAttribute('content', 'width=device-width, initial-scale=1');
         },
     });
 
