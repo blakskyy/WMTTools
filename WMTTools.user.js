@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         WMT Tools
+// @name         WMTTools
 // @namespace    https://3datc.com
 // @version      2026.11.10
-// @description  Add-ons for FAA WMT Scheduler: next payday, your initials highlighted, Schedule View days-off helper, calendar export (.ics / .csv), and optional auto sign-in.
+// @description  Add-ons for WMT Scheduler: next payday, your initials highlighted, Schedule View days-off helper, calendar export (.ics / .csv), and optional auto sign-in.
 // @author       3dATC|BLAksky
 // @match        https://wmtscheduler.faa.gov/*
 // @match        https://workforce.faa.gov/*
@@ -13,8 +13,9 @@
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
 // @run-at       document-idle
+// @updateURL    https://raw.githubusercontent.com/blakskyy/WMTTools/main/WMTTools.user.js
+// @downloadURL  https://raw.githubusercontent.com/blakskyy/WMTTools/main/WMTTools.user.js
 // ==/UserScript==
-// (Before publishing on GitHub, add @updateURL and @downloadURL lines above. See README.md.)
 
 /*
  * HOW THIS FILE IS ORGANIZED
@@ -25,8 +26,8 @@
  *   4. START
  *
  * Nobody needs to edit this file. Every setting lives in the settings panel
- * (the "WMT Tools" link in the WMT menu bar, or the userscript manager's menu >
- * WMT Tools settings). Settings are kept in the manager's storage (Violentmonkey
+ * (the "WMTTools" link in the WMT menu bar, or the userscript manager's menu >
+ * WMTTools settings). Settings are kept in the manager's storage (Violentmonkey
  * or Tampermonkey), so they survive updates.
  *
  * ADDING A FEATURE: copy an existing module block and change it:
@@ -54,7 +55,7 @@
     //  1. CORE
     // ══════════════════════════════════════════════════════════════════════
 
-    const APP_NAME = 'WMT Tools';
+    const APP_NAME = 'WMTTools';
     const WMT_HOST = 'wmtscheduler.faa.gov';
     const LOGIN_HOST = 'workforce.faa.gov';
 
@@ -226,7 +227,7 @@
             return item;
         },
 
-        // "WMT Tools" entry in WMT's top menu bar
+        // "WMTTools" entry in WMT's top menu bar
         addMenuLink() {
             const menu = document.querySelector('#chromemenu ul');
             if (!menu || document.getElementById('wmtt-menu-link')) return;
@@ -842,7 +843,7 @@
             const stamp = icsUTC(now);
             // Goes up with every export, so calendars treat a re-import as the newer version
             const sequence = Math.floor((now - Date.UTC(2024, 0, 1)) / 60000);
-            const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//WMT Tools//Calendar Export//EN',
+            const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//WMTTools//Calendar Export//EN',
                            'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', `X-WR-CALNAME:${icsText(S.calendarName)}`];
             for (const e of events) {
                 lines.push('BEGIN:VEVENT',
@@ -933,7 +934,7 @@
                     h('b', {}, unknown.map(e => e.raw).join(', ')), ' — exported as all-day events.'),
                 guessed.length && warn('⚠ Not in the Shift Legend: ', h('b', {}, guessed.map(e => e.raw).join(', ')),
                     ' — length estimated. Open ', h('i', {}, 'Views → Shift Legend'), ' once to update the shift list, then reload this page.'),
-                !S.initials && warn('Tip: set your initials in WMT Tools settings to put them in event titles.'),
+                !S.initials && warn('Tip: set your initials in WMTTools settings to put them in event titles.'),
                 h('div', { style: 'margin-bottom:12px' },
                     btn('Download .ics', () => download(buildICS(events, payPeriod), baseName + '.ics', 'text/calendar;charset=utf-8'), 'font-weight:bold'),
                     btn('Download CSV', () => download(buildCSV(events), baseName + '.csv', 'text/csv;charset=utf-8'), 'margin-left:6px')),
@@ -1022,7 +1023,7 @@
             // Stop so the account doesn't get locked by repeated attempts.
             const last = Number(sessionStorage.getItem(GUARD_KEY) || 0);
             if (Date.now() - last < ctx.settings.retryGuardSeconds * 1000) {
-                ctx.notice('paused because the password page came back. If your password changed, update it in WMT Tools settings.',
+                ctx.notice('paused because the password page came back. If your password changed, update it in WMTTools settings.',
                            { kind: 'warn', actions: [{ label: 'Settings', onClick: ui.openSettings }] });
                 return;
             }
