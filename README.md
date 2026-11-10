@@ -29,6 +29,40 @@ Optional: open **Views → Shift Legend** once. The calendar export then uses yo
 
 Turn it on in settings and enter your sign-in email and password. They're saved in Violentmonkey's storage on your computer, unencrypted. Only use it on a computer you alone use. If the password page returns right after a submit, it stops trying, so a wrong password can't lock your account.
 
+## Phones and tablets
+
+Phone browsers like Chrome and regular Safari can't run userscripts. You need a browser or app that can. WMT shows its full desktop page on a phone, so expect to pinch and zoom. Your settings don't sync from your computer, so enter them again on each device.
+
+### Android: Firefox + Violentmonkey
+
+1. Install **Firefox** from the Play Store.
+2. In Firefox, open the menu (**⋮**) → **Extensions** (or **Add-ons**), find **Violentmonkey**, and tap **Add**.
+3. Open the raw `WMTTools.user.js` link in Firefox. Violentmonkey opens its install page; tap **Install**.
+4. Open WMT in Firefox and tap **WMTTools** in the menu bar to set your initials.
+
+Updates arrive automatically, the same as on a computer.
+
+### iPhone / iPad: a Safari userscript app
+
+Violentmonkey isn't available on iOS, so use one of these Safari extensions from the App Store. Each works through Safari, so use Safari for WMT.
+
+- **Tampermonkey**: supports everything this script uses. Recommended.
+- **Stay**: free alternative.
+- **Macaque**: another alternative.
+
+1. Install the app from the App Store.
+2. Turn it on: **Settings → Apps → Safari → Extensions** (on older iOS, **Settings → Safari → Extensions**). Turn the extension on and set **wmtscheduler.faa.gov** and **workforce.faa.gov** to **Allow**, or allow all websites.
+3. Open the raw `WMTTools.user.js` link in Safari. Tap the extension's icon in the address bar (the puzzle piece or **AA** button) and install the script. If no install prompt appears, copy the script's address and add it from inside the app (most have **Add from URL**).
+4. Open WMT in Safari and tap **WMTTools** in the menu bar to set your initials.
+
+Only the Tampermonkey version has been confirmed to support everything here. If a feature misbehaves in Stay or Macaque, try Tampermonkey.
+
+### On a phone
+
+- **Calendar export:** tapping **Download .ics** saves a file. On iPhone, Safari usually offers to add the events to Calendar. On Android, open the download from Firefox's **Downloads**. If your calendar app won't open it, import the file on a computer instead (Google Calendar: **Settings → Import & export**).
+- **Settings:** if the **WMTTools** link is hard to reach, use the extension's menu instead (Violentmonkey icon, or the extension button in Safari) → **WMTTools settings**.
+- **Auto sign-in:** stores your password on that phone. Only turn it on for a phone that has a passcode and that only you use.
+
 ## Updates
 
 Violentmonkey checks for updates automatically. To check right away, open its dashboard and click the update button on WMTTools. An update installs only when the `@version` number goes up.

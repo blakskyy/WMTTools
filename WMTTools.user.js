@@ -72,13 +72,22 @@
     const wmtPage = path => new RegExp(`^${escapeRe(WMT_HOST)}/${escapeRe(path)}(/|$)`, 'i');
     const hostPage = host => new RegExp(`^${escapeRe(host)}/`, 'i');
 
+    // ---- Userscript manager compatibility -----------------------------------
+    // Violentmonkey and Tampermonkey (desktop, Android, iOS) have everything.
+    // Some other managers, mostly on iOS, lack the extras, so each one falls back.
+    const addStyle = typeof GM_addStyle === 'function'
+        ? GM_addStyle
+        : css => { const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s); return s; };
+    const addMenuCommand = typeof GM_registerMenuCommand === 'function' ? GM_registerMenuCommand : () => {};
+    const scriptVersion = typeof GM_info !== 'undefined' && GM_info.script ? GM_info.script.version : '';
+
     // ---- Storage -------------------------------------------------------------
     // The userscript manager's storage belongs to this script, is shared by WMT and the
     // sign-in site, and is untouched by script updates.
     const store = {
         get: (key, fallback) => GM_getValue(key, fallback),
         set: (key, value) => GM_setValue(key, value),
-        remove: key => GM_deleteValue(key),
+        remove: key => (typeof GM_deleteValue === 'function' ? GM_deleteValue(key) : GM_setValue(key, undefined)),
     };
     const settingKey = (moduleId, key) => `settings.${moduleId}.${key}`;
     const dataKey = (moduleId, key) => `data.${moduleId}.${key}`;
@@ -173,7 +182,7 @@
 
     const ui = {
         injectStyles() {
-            GM_addStyle(`
+            addStyle(`
                 #wmtt-notices { position: fixed; top: 8px; right: 8px; z-index: 100000; width: 380px; max-width: calc(100vw - 16px);
                                 font: 13px/1.4 Arial, sans-serif; }
                 .wmtt-notice { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 6px; padding: 8px 10px;
@@ -206,6 +215,11 @@
                 #wmtt-settings input[type=text], #wmtt-settings input[type=password], #wmtt-settings input[type=number] {
                     width: 100%; box-sizing: border-box; padding: 3px 5px; }
                 #wmtt-settings input[type=checkbox] { justify-self: start; }
+                @media (max-width: 560px) {   /* phones: label above its input */
+                    #wmtt-settings .wmtt-field { grid-template-columns: 1fr; }
+                    #wmtt-settings .wmtt-field .wmtt-help { grid-column: 1; }
+                    #wmtt-settings .wmtt-panel { max-height: 94vh; }
+                }
                 @media print { #wmtt-notices, #wmtt-settings { display: none !important; } }
             `);
         },
@@ -304,7 +318,7 @@
                                        onclick: e => { if (e.target === overlay) close(); } },
                 h('div', { class: 'wmtt-panel', role: 'dialog', 'aria-label': `${APP_NAME} settings` },
                     h('header', {}, `${APP_NAME} settings`,
-                        h('span', { style: 'font-weight:normal;color:#888;font-size:12px' }, `  v${GM_info.script.version}`)),
+                        h('span', { style: 'font-weight:normal;color:#888;font-size:12px' }, scriptVersion && `  v${scriptVersion}`)),
                     h('div', { class: 'wmtt-body' }, modules.map(section)),
                     h('footer', {},
                         h('button', { type: 'button', onclick: close }, 'Cancel'),
@@ -374,7 +388,7 @@
                 const header = document.querySelector('#WorksheetViewHeader h2');
                 if (!header) return;
 
-                GM_addStyle(`
+                addStyle(`
                     #wmtt-payday { float: left; width: 45%; border: 1px solid #8fd19e; border-collapse: collapse;
                                    background-color: ${ctx.settings.color}; }
                     #wmtt-payday th, #wmtt-payday td { padding: .25rem; text-align: left; }
@@ -407,7 +421,7 @@
         description: 'Worksheet View: hides the Print button next to the date.',
         pages: [wmtPage('Views/WorksheetView')],
         run() {
-            GM_addStyle('#WorksheetViewHeader > tbody > tr > td.noprint { display: none; }');
+            addStyle('#WorksheetViewHeader > tbody > tr > td.noprint { display: none; }');
         },
     });
 
@@ -434,7 +448,7 @@
                 const me = ctx.initials;
                 const { rowColor, textColor } = ctx.settings;
 
-                GM_addStyle(`
+                addStyle(`
                     .wmtt-me { font-weight: bold !important; ${textColor ? `color: ${textColor} !important;` : ''} }
                     tr.wmtt-me-row > td, tr.wmtt-me-row > th, .wmtt-me-solo { background-color: ${rowColor} !important; }
                 `);
@@ -644,7 +658,7 @@
                 const favorites = new Set(ctx.settings.initials.map(i => i.trim().toUpperCase()).filter(Boolean));
                 if (!favorites.size) return;
 
-                GM_addStyle(`.wmtt-fav { color: ${ctx.settings.color} !important;` +
+                addStyle(`.wmtt-fav { color: ${ctx.settings.color} !important;` +
                             `${ctx.settings.bold ? ' font-weight: bold !important;' : ''} }`);
 
                 const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
@@ -1164,7 +1178,7 @@
 
     function start() {
         ui.injectStyles();
-        GM_registerMenuCommand(`${APP_NAME} settings`, ui.openSettings);
+        addMenuCommand(`${APP_NAME} settings`, ui.openSettings);
 
         if (onWmt) {
             ui.addMenuLink();
