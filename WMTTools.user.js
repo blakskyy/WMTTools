@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WMTTools
 // @namespace    https://3datc.com
-// @version      2026.11.10.3
+// @version      2026.11.10.4
 // @description  Add-ons for WMT Scheduler: next payday, your initials highlighted, Schedule View days-off helper, calendar export (.ics / .csv), and optional auto sign-in.
 // @author       3dATC|BLAksky
 // @match        https://wmtscheduler.faa.gov/*
@@ -61,8 +61,11 @@
 
     // Local test copies of WMT pages (served from your own PC) behave like the
     // real site. Has no effect in normal use: @match only allows FAA sites.
+    // Add ?wmttHost=workforce.faa.gov to a local test page to act as the sign-in site.
     const DEV_HOSTS = ['localhost', '127.0.0.1'];
-    const currentHost = DEV_HOSTS.includes(location.hostname) ? WMT_HOST : location.hostname;
+    const currentHost = DEV_HOSTS.includes(location.hostname)
+        ? (new URLSearchParams(location.search).get('wmttHost') || WMT_HOST)
+        : location.hostname;
     const currentPage = currentHost + location.pathname;      // e.g. "wmtscheduler.faa.gov/Views/MySchedule"
     const onWmt = currentHost === WMT_HOST;
 
@@ -425,10 +428,60 @@
         },
     });
 
+    // ── Mobile layout (Worksheet View) ─────────────────────────────────────────
+    defineModule({
+        id: 'mobileWorksheet',
+        name: 'Mobile layout',
+        description: 'Worksheet View: on narrow screens like phones, puts the tables in one column ' +
+                     'instead of side by side, and wraps the 14 days into two rows, so there\'s less sideways scrolling.',
+        pages: [wmtPage('Views/WorksheetView')],
+        settings: [
+            { key: 'maxWidth', label: 'Use when the screen is at most (px) wide', type: 'number', default: 900, min: 0, step: 10,
+              placeholder: 'blank = always', help: 'Phones are about 360–430 px wide, tablets 768–1024. Blank = always use it.' },
+        ],
+        run(ctx) {
+            // The page lays out its parts as table cells side by side. Turning those
+            // cells into blocks stacks them; the tables inside keep their own layout.
+            const stack = (...tables) => tables.flatMap(t => [t, `${t} > tbody`, `${t} > tbody > tr`, `${t} > tbody > tr > td`]).join(',\n');
+            const css = `
+                ${stack('#WorksheetViewHeader', '#WorksheetViewDashBoard')} {
+                    display: block; width: 100% !important; box-sizing: border-box;
+                }
+                #WorksheetViewHeader > tbody > tr > td { margin-bottom: 8px; }
+
+                /* Page header: "WMT Scheduler - facility" and "Welcome: name" are set never
+                   to wrap, which keeps the whole page wider than a phone */
+                td.title table td { display: block; width: auto !important; white-space: normal !important; padding-left: 10px; }
+                /* Menu bar: let the items wrap onto a second line */
+                #chromemenu ul { white-space: normal !important; height: auto !important; }
+                #chromemenu ul li { display: inline-block !important; float: none !important; }
+                #wmtt-payday { float: none !important; width: 100% !important; margin-bottom: 8px; }
+                #tblTopGuidelines { width: 100% !important; margin: 0 !important; }
+
+                /* 14 days → two rows of 7 */
+                #WorksheetViewDayStrip { width: 100% !important; }
+                #WorksheetViewDayStrip > tbody > tr { display: flex; flex-wrap: wrap; }
+                #WorksheetViewDayStrip > tbody > tr > td { flex: 0 0 calc(100% / 7); min-width: 0; box-sizing: border-box;
+                                                           padding: 4px 0; font-size: .75em; overflow-wrap: anywhere; }
+
+                /* Every table full width; wide Requests tables scroll inside themselves */
+                #WorksheetViewDashBoard table { width: 100% !important; }
+                /* Long words in OT reasons and notes may break instead of widening the page */
+                #ControllersOnOTShifts td td:nth-child(4), #ShiftNotesForDay td { overflow-wrap: anywhere; }
+                /* (capped at the screen width, or they'd still push the whole page wider) */
+                #tblShiftChange, #tblXTECTE, #tblSupRequests { display: block; overflow-x: auto; max-width: calc(100vw - 48px); }
+                #WorksheetViewDashBoard > tbody > tr > td + td { margin-top: 16px; }
+                body { -webkit-text-size-adjust: 100%; }
+            `;
+            const maxWidth = ctx.settings.maxWidth;
+            addStyle(maxWidth ? `@media (max-width: ${maxWidth}px) { ${css} }` : css);
+        },
+    });
+
     // ── Highlight my initials (Worksheet View) ───────────────────────────────
     {
-        // The page decorates initials: "IV$" (OT), "(PB)" (supervisor),
-        // "(GU-OM)" (role suffix), plus trailing &nbsp;. Reduce to bare initials.
+        // The page decorates initials: "XY$" (OT), "(YZ)" (supervisor),
+        // "(XZ-OM)" (role suffix), plus trailing &nbsp;. Reduce to bare initials.
         const bareInitials = text => text.replace(/[\s\u00a0$()]/g, '').split('-')[0];
 
         defineModule({
@@ -467,7 +520,7 @@
                     if (!el.children.length && bareInitials(el.textContent) === me) mark(el);
                 });
 
-                // Team Brief is one line of text: " - YQ - PS - ML - "
+                // Team Brief is one line of text: " - XY - YZ - XZ - "
                 const brief = document.querySelector('#TeamBrief td div');
                 if (brief) {
                     const parts = brief.textContent.split(/(\s*-\s*)/);
@@ -598,16 +651,16 @@
 
         // Three places initials appear in WMT, from most to least common:
         //  1. A cell or link that is just the initials, maybe decorated:
-        //     "PS", "IV$", "(PB)", "(GU-OM)", "PB (LV)". It must be the element's
+        //     "XY", "YZ$", "(XZ)", "(ZX-OM)", "XZ (LV)". It must be the element's
         //     whole content, so section headings like "OT" aren't matched.
         const SOLO = /^\(?([A-Z]{2,3})(?:-[A-Z]+)?\)?\$?(?:\s*\(LV\))?$/;
-        //  2. Text that starts with "XX - ": Schedule View names
-        //     ("AX - Lastname, First") and shift notes ("DR - OT List Exhausted")
+        //  2. Text that starts with "XY - ": Schedule View names
+        //     ("XY - Lastname, First") and shift notes ("YZ - OT List Exhausted")
         const PREFIX = /^\s*([A-Z]{2,3}) - /;
-        //  3. A dash-separated list of initials: Team Brief " - YQ - PS - ML - "
+        //  3. A dash-separated list of initials: Team Brief " - XY - YZ - XZ - "
         const LIST = /^[\s-]*[A-Z]{2,3}(?:\s*-\s*[A-Z]{2,3})+[\s-]*$/;
-        // Anything else (free text like "PS working OT for AX.") is left alone,
-        // so favorites whose initials are also words (OT, ON, TO) don't match there.
+        // Anything else (free text like "XY working OT for YZ.") is left alone,
+        // so favorites whose initials are also words (OT, IN, TO) don't match there.
 
         // [start, end] positions of favorite initials inside one text node
         function findRanges(node, favorites) {
@@ -649,7 +702,7 @@
             description: 'Every WMT page: shows the initials of the people you list in their own color.',
             pages: [hostPage(WMT_HOST)],
             settings: [
-                { key: 'initials', label: 'Initials', type: 'list', default: [], placeholder: 'e.g. AA, BB, CC',
+                { key: 'initials', label: 'Initials', type: 'list', default: [], placeholder: 'e.g. XY, YZ, XZ',
                   help: 'Comma separated.' },
                 { key: 'color', label: 'Color', type: 'color', default: '#ff0000' },
                 { key: 'bold', label: 'Also bold', type: 'checkbox', default: false },
@@ -691,12 +744,12 @@
         // Symbol at the end of a shift ("1500$" → "OT 1500")
         const PAY_LABELS = { '$': 'OT', '^': 'CREDIT', '!': 'COMP' };
         const PAY_CATEGORY = { '$': 'ot', '^': 'credit', '!': 'comp' };
-        // Special assignments ("C0600" → "AX CIC 0600")
+        // Special assignments ("C0600" → "XY CIC 0600")
         const ROLE_LABELS = {
             '@': 'ADMIN', '@D': 'ADMIN DETAIL', '@T': 'ADMIN TRNG', C: 'CIC', D: 'DETAIL',
             T: 'TRNG', AREA: 'TMU', TMC: 'TMC', OM: 'OMIC',
         };
-        // Shift Legend remarks added to the calendar title, e.g. "AX 0800 (No Flex)"
+        // Shift Legend remarks added to the calendar title, e.g. "XY 0800 (No Flex)"
         const TITLE_REMARKS = ['No Flex'];
         const ADMIN_SHIFT_HOURS = 8.5;   // WMT: "@ + shift = Administrative Shift 8.5 hours"
         // Only for a code missing from the legend: the letter picks the length in hours
@@ -1084,61 +1137,125 @@
 
     // ── Auto sign-in ───────────────────────────────────────────────────────────
     {
-        // Several selectors per field, most stable first. Okta's numbered IDs
-        // (input27, form19, ...) change between versions, so they come last.
-        const SELECTORS = {
-            gatekeeperButton: ['#btnLogin'],
-            username: ['input[name="identifier"]', 'input[name="username"]', '#input27'],
-            password: ['input[name="credentials.passcode"]', 'input[name="password"]', '#input56'],
-            submit: 'input[type="submit"], button[type="submit"], .o-form-button-bar input',
+        // The FAA sign-in (MyAccess, built on Okta's sign-in widget) is one page
+        // that redraws itself for each step:
+        //   1. "Sign in using MyAccess"                   email → Next
+        //   2. "Verify it's you with a security method"   Password → Select
+        //   3. "Verify with your password"                password → Verify
+        // Each new form is recognized by what's on it, not by order or by Okta's
+        // numbered IDs (form19, input27, ...), which change between visits. Okta
+        // skips step 1 when it remembers you and step 2 for some accounts; both are fine.
+        const SEL = {
+            gatekeeperButton: '#btnLogin',
+            form: '#okta-sign-in form, form[data-se="o-form"]',
+            email: 'input[name="identifier"], input[name="username"]',
+            password: 'input[name="credentials.passcode"], input[name="password"]',
+            authenticatorList: '.authenticator-list, .authenticator-verify-list',
+            choosePassword: '[data-se="okta_password"] [data-se="button"], [data-se="okta_password"] .select-factor',
+            submit: '.o-form-button-bar [type="submit"], [type="submit"]',
+            error: '.o-form-error-container, .okta-form-infobox-error',
         };
         const GUARD_KEY = 'wmttLoginLastPasswordSubmit';   // sessionStorage, sign-in site only
+        const GIVE_UP_SECONDS = 180;                         // stop watching the page after this
 
         const sleep = seconds => new Promise(r => setTimeout(r, seconds * 1000));
-        const findIn = (root, list) => list.map(s => root.querySelector(s)).find(Boolean) || null;
+        const errorText = () => [...document.querySelectorAll(SEL.error)].map(textOf).find(Boolean) || '';
 
         // Sets a value so the sign-in widget notices the change
         function fill(input, value) {
             Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
+            for (const type of ['input', 'change']) input.dispatchEvent(new Event(type, { bubbles: true }));
         }
 
-        async function clickAfterDelay(el, delaySeconds) {
-            if (delaySeconds) await sleep(delaySeconds);
+        async function click(el, ctx) {
+            if (ctx.settings.delaySeconds) await sleep(ctx.settings.delaySeconds);
             el.click();
         }
 
-        async function usernameStep(ctx) {
-            const input = await waitFor(SELECTORS.username);
-            if (!input) return;
-            if (input.value !== ctx.settings.email) fill(input, ctx.settings.email);
-            // Password on the same form? Then the password step submits it.
-            if (!input.form || findIn(input.form, SELECTORS.password)) return;
-            const button = input.form.querySelector(SELECTORS.submit);
-            if (button) await clickAfterDelay(button, ctx.settings.delaySeconds);
+        async function submit(form, ctx) {
+            const button = form.querySelector(SEL.submit);
+            if (!button) throw new Error("couldn't find the form's button.");
+            await click(button, ctx);
         }
 
-        async function passwordStep(ctx) {
-            const input = await waitFor(SELECTORS.password);
-            if (!input) return;
+        // ---- The steps. Each returns a message to stop with, or nothing to carry on. ----
+        const STEPS = [
+            {
+                label: 'password',
+                matches: form => form.querySelector(SEL.password),
+                async run(form, ctx) {
+                    // Password page came back soon after a submit (e.g. after a reload):
+                    // it was probably rejected. Don't retry, so the account can't lock.
+                    const last = Number(sessionStorage.getItem(GUARD_KEY) || 0);
+                    if (Date.now() - last < ctx.settings.retryGuardSeconds * 1000) {
+                        return 'paused because the password page came back. If your password changed, update it in settings.';
+                    }
+                    const email = form.querySelector(SEL.email);   // some layouts ask for both at once
+                    if (email && ctx.settings.email && email.value !== ctx.settings.email) fill(email, ctx.settings.email);
+                    fill(form.querySelector(SEL.password), ctx.settings.password);
+                    sessionStorage.setItem(GUARD_KEY, String(Date.now()));
+                    await submit(form, ctx);
+                },
+            },
+            {
+                label: 'email',
+                matches: form => form.querySelector(SEL.email),
+                async run(form, ctx) {
+                    const input = form.querySelector(SEL.email);
+                    if (ctx.settings.email && input.value !== ctx.settings.email) fill(input, ctx.settings.email);
+                    if (!input.value) return 'no sign-in email saved. Add it in settings.';
+                    await submit(form, ctx);
+                },
+            },
+            {
+                label: 'security method',
+                matches: form => form.querySelector(SEL.authenticatorList),
+                async run(form, ctx) {
+                    const choose = form.querySelector(SEL.choosePassword);
+                    if (!choose) return 'Password isn\'t offered as a sign-in method here. Finish signing in yourself.';
+                    await click(choose, ctx);
+                },
+            },
+        ];
 
-            // Password page came back soon after a submit: it was probably rejected.
-            // Stop so the account doesn't get locked by repeated attempts.
-            const last = Number(sessionStorage.getItem(GUARD_KEY) || 0);
-            if (Date.now() - last < ctx.settings.retryGuardSeconds * 1000) {
-                ctx.notice('paused because the password page came back. If your password changed, update it in WMTTools settings.',
-                           { kind: 'warn', actions: [{ label: 'Settings', onClick: ui.openSettings }] });
-                return;
-            }
-            const user = input.form && findIn(input.form, SELECTORS.username);
-            if (user && user.value !== ctx.settings.email) fill(user, ctx.settings.email);
-            fill(input, ctx.settings.password);
+        // Watches the page and handles each new sign-in form once
+        function runSignIn(ctx) {
+            const handled = new WeakSet();   // forms already dealt with
+            const done = new Set();          // steps already done on this page load
+            let pending = 0, stopped = false;
 
-            const button = input.form && input.form.querySelector(SELECTORS.submit);
-            if (!button) return ctx.log('Submit button not found');
-            sessionStorage.setItem(GUARD_KEY, String(Date.now()));
-            await clickAfterDelay(button, ctx.settings.delaySeconds);
+            const stop = (message, kind = 'warn') => {
+                if (stopped) return;
+                stopped = true;
+                observer.disconnect();
+                clearTimeout(giveUp);
+                if (message) ctx.notice(message, { kind, actions: [{ label: 'Settings', onClick: ui.openSettings }] });
+            };
+
+            const check = () => {
+                if (stopped) return;
+                // An error after one of our steps (wrong password, locked account, ...): stop
+                const error = done.size && errorText();
+                if (error) return stop(`stopped. The sign-in page says: "${error}"`);
+
+                const form = document.querySelector(SEL.form);
+                if (!form || handled.has(form)) return;
+                const step = STEPS.find(s => s.matches(form));
+                if (!step) return;                 // a step we don't handle (e.g. a code prompt): leave it to the user
+                handled.add(form);
+                if (done.has(step.label)) return stop(`stopped because the ${step.label} step came back. Finish signing in yourself.`);
+                done.add(step.label);
+                ctx.log(`step: ${step.label}`);
+                Promise.resolve(step.run(form, ctx))
+                    .then(message => message && stop(message))
+                    .catch(err => stop(err.message, 'error'));
+            };
+
+            // Let each redraw settle before looking at it
+            const observer = new MutationObserver(() => { clearTimeout(pending); pending = setTimeout(check, 150); });
+            observer.observe(document.documentElement, { childList: true, subtree: true });
+            const giveUp = setTimeout(() => stop(), GIVE_UP_SECONDS * 1000);
+            check();
         }
 
         defineModule({
@@ -1157,17 +1274,16 @@
                   help: 'If the password page returns this soon after a submit, don\'t try again.' },
             ],
             async run(ctx) {
-                if (currentHost === WMT_HOST) {
-                    const btn = await waitFor(SELECTORS.gatekeeperButton);
-                    if (btn) await clickAfterDelay(btn, ctx.settings.delaySeconds);
+                if (currentHost === WMT_HOST) {   // WMT's warning page: click Login
+                    const btn = await waitFor(SEL.gatekeeperButton, 10);
+                    if (btn) await click(btn, ctx);
                     return;
                 }
-                if (!ctx.settings.email || !ctx.settings.password) {
-                    ctx.notice('no email or password saved yet.', { kind: 'warn', actions: [{ label: 'Settings', onClick: ui.openSettings }] });
+                if (!ctx.settings.password) {
+                    ctx.notice('no password saved yet.', { kind: 'warn', actions: [{ label: 'Settings', onClick: ui.openSettings }] });
                     return;
                 }
-                // Both at once: Okta may skip the email page when it remembers you
-                await Promise.all([usernameStep(ctx), passwordStep(ctx)]);
+                runSignIn(ctx);
             },
         });
     }

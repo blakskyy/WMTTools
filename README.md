@@ -6,6 +6,7 @@ One userscript that adds features to WMT Scheduler. Each feature can be turned o
 |---|---|---|
 | Next payday | Worksheet View | Next payday, the pay period it covers, and a countdown. Worked out from the every-other-Tuesday pay schedule, so it never needs yearly updates. |
 | Hide Print button | Worksheet View | Hides the Print button next to the date. |
+| Mobile layout | Worksheet View | On phones, puts the tables in one column and the 14 days in two rows, so there's no sideways scrolling. Desktop is unchanged. |
 | Highlight my initials | Worksheet View | Your initials in bold, and rows that include you shaded green. |
 | Schedule View helper | Schedule View | Highlights your row, days off and leave, and who else is off on those days. Adds an "Off with me" summary. |
 | Favorite co-workers | Every page | Shows the initials of people you choose in their own color (red by default). |
@@ -27,11 +28,19 @@ Optional: open **Views → Shift Legend** once. The calendar export then uses yo
 
 ### Auto sign-in
 
-Turn it on in settings and enter your sign-in email and password. They're saved in Violentmonkey's storage on your computer, unencrypted. Only use it on a computer you alone use. If the password page returns right after a submit, it stops trying, so a wrong password can't lock your account.
+Turn it on in settings and enter your sign-in email and password. They're saved in Violentmonkey's storage on your computer, unencrypted. Only use it on a computer you alone use.
+
+It clicks **Login** on the WMT warning page, then handles each MyAccess sign-in step as it appears:
+
+1. **Sign in using MyAccess:** enters your email and clicks **Next**. (Skipped when MyAccess remembers you.)
+2. **Verify it's you with a security method:** clicks **Select** next to **Password**. (Only shows up sometimes.)
+3. **Verify with your password:** enters your password and clicks **Verify**.
+
+It never tries a password twice. If the sign-in page shows an error ("Password is incorrect", a locked account, ...), or the password page comes back within 2 minutes of a try, it stops and shows a message, so a wrong password can't lock your account. Any other step, like a PIV card or a code, is left for you to finish.
 
 ## Phones and tablets
 
-Phone browsers like Chrome and regular Safari can't run userscripts. You need a browser or app that can. WMT shows its full desktop page on a phone, so expect to pinch and zoom. Your settings don't sync from your computer, so enter them again on each device.
+Phone browsers like Chrome and regular Safari can't run userscripts. You need a browser or app that can. WMT itself shows its desktop page on a phone. The **Mobile layout** feature (on by default) fits Worksheet View to the screen; other pages still need some pinching and zooming. Your settings don't sync from your computer, so enter them again on each device.
 
 ### Android: Firefox + Violentmonkey
 
