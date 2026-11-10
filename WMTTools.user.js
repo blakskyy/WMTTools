@@ -653,7 +653,7 @@
     defineModule({
         id: 'scheduleView',
         name: 'Schedule View helper',
-        description: 'Schedule View: highlights your row, your days off and leave, everyone off on the same days, ' +
+        description: 'Schedule View: highlights your row, today\'s shift, your days off and leave, everyone off on the same days, ' +
                      'and overstaffed Day / Swing counts. Adds an "Off with me" summary.',
         pages: [wmtPage('Views/ScheduleView')],
         settings: [
@@ -667,6 +667,8 @@
               help: 'Number of people on a Day / Swing shift that makes it overstaffed. Counts at or above it are highlighted.' },
             { key: 'colorOverstaff',  label: 'Overstaff color',          type: 'color', default: '#00ff00' },
             { key: 'colorMyRow',      label: 'My row',                   type: 'color', default: '#e3f8e3' },
+            { key: 'colorToday',      label: 'Outline around today',     type: 'color', default: '#f5b800',
+              help: 'Around your shift for today and today\'s date at the top of the column.' },
             { key: 'colorMyOff',      label: 'My days off (X)',          type: 'color', default: '#6fcf6f' },
             { key: 'colorMyLeave',    label: 'My leave days',            type: 'color', default: '#ffd966' },
             { key: 'colorShareName',  label: 'Name of someone off with me', type: 'color', default: '#dcecff' },
@@ -692,9 +694,24 @@
                     }));
             }
 
-            // 2) my row, my X days and my leave days
+            // Today's column: the date header cells read like "Sun 11/01/2026". "Today"
+            // comes from WMT's own "Today's date" label so it always agrees with WMT.
+            const pad2 = n => String(n).padStart(2, '0');
+            const now = new Date();
+            const today = (textOf(document.getElementById('lblMenuTodaysDateValue')).match(/\d{2}\/\d{2}\/\d{4}/) ||
+                           [`${pad2(now.getMonth() + 1)}/${pad2(now.getDate())}/${now.getFullYear()}`])[0];
+            const headers = rows.filter(r => r.cells.length === 15 && textOf(r.cells[0]) === 'Name');
+            const todayCol = headers.length ? headers[0].cells.findIndex(c => textOf(c).endsWith(today)) : -1;
+            const outlineToday = td => {
+                td.style.outline = `3px solid ${S.colorToday}`;
+                td.style.outlineOffset = '-3px';   // drawn inside the cell, so neighbors can't cover it
+            };
+            if (todayCol > 0) headers.forEach(r => outlineToday(r.cells[todayCol]));
+
+            // 2) my row, today's shift, my X days and my leave days
             const me = ctx.initials && rows.find(r => isPerson(r) && initialsOf(r) === ctx.initials);
             if (!me) return;
+            if (todayCol > 0) outlineToday(me.cells[todayCol]);
 
             me.tr.style.backgroundColor = S.colorMyRow;
             const myOff = new Map();   // column -> 'X' | 'leave'
@@ -728,14 +745,16 @@
 
             // 4) "Off with me" summary
             if (!S.showSummary || !myOff.size) return;
-            const header = rows.find(r => r.cells.length === 15 && textOf(r.cells[0]) === 'Name');
+            const header = headers[0];
             const dayLabel = i => (header ? textOf(header.cells[i]).replace(/\/\d{4}$/, '') : `Day ${i}`);
-            const cellCss = 'padding:4px 8px; vertical-align:top; min-width:80px;';
+            const baseCss = 'padding:4px 8px; vertical-align:top; min-width:80px;';
 
             const summary = h('table', { border: '1', style: 'margin:0 auto; border-collapse:collapse; text-align:center;' });
             const [trHead, trCount, trList] = [summary.insertRow(), summary.insertRow(), summary.insertRow()];
             myOff.forEach((kind, i) => {
                 const people = offByCol.get(i);
+                // Today's column gets a bold border, nothing more
+                const cellCss = baseCss + (i === todayCol ? 'border:3px solid #333;' : '');
                 trHead.append(h('td', { style: `${cellCss} font-weight:bold; background:${kind === 'leave' ? S.colorMyLeave : S.colorMyOff}` },
                     dayLabel(i) + (kind === 'leave' ? ' (A)' : '')));
                 trCount.append(h('td', { style: cellCss }, `${people.length} off`));
