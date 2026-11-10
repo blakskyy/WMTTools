@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WMTTools
 // @namespace    https://3datc.com
-// @version      2026.11.10.8
+// @version      2026.11.10.9
 // @description  Add-ons for WMT Scheduler: next payday, your initials highlighted, Schedule View days-off helper, calendar export (.ics / .csv), and optional auto sign-in.
 // @author       3dATC|BLAksky
 // @match        https://wmtscheduler.faa.gov/*
@@ -93,6 +93,12 @@
         remove: key => (typeof GM_deleteValue === 'function' ? GM_deleteValue(key) : GM_setValue(key, undefined)),
     };
     const settingKey = (moduleId, key) => `settings.${moduleId}.${key}`;
+
+    // ---- Defaults shared by several features ------------------------------------
+    // Each is a setting of one feature that others read too, e.g. with
+    // store.get(settingKey('calendarExport', 'midStartHour'), MID_START_HOUR)
+    const MOBILE_MAX_WIDTH = 900;   // Mobile layout: phone layouts apply at or below this screen width
+    const MID_START_HOUR = 19;      // Calendar export: a shift starting at or after this hour is a MID
     const dataKey = (moduleId, key) => `data.${moduleId}.${key}`;
 
     // ---- Modules -----------------------------------------------------------------
@@ -429,9 +435,6 @@
     });
 
     // ── Mobile layout (Worksheet View) ─────────────────────────────────────────
-    // Screen width at or below which phone layouts apply (Mobile layout's default;
-    // Hide menu buttons reads the same setting)
-    const MOBILE_MAX_WIDTH = 900;
     {
         // The dashboard's sections, by the short names used in the "Table order" setting
         const SECTIONS = {
@@ -674,6 +677,9 @@
             { key: 'colorShareName',  label: 'Name of someone off with me', type: 'color', default: '#dcecff' },
             { key: 'colorShareOff',   label: 'Their X on my days off',   type: 'color', default: '#7fb3ea' },
             { key: 'colorShareLeave', label: 'Their LV on my days off',  type: 'color', default: '#b9d6f5' },
+            { key: 'colorMidOff',     label: 'Their MID ending on my day off', type: 'color', default: '#fff3a8',
+              help: 'WMT lists a MID on the day it ends, so they\'re off that morning. A MID is a shift starting at or after ' +
+                    'the Calendar export\'s "MID starts at or after hour".' },
         ],
         run(ctx) {
             const table = document.getElementById('tblPayPeriodStatus');
@@ -722,13 +728,28 @@
                 else if (MY_LEAVE.test(v)) { td.style.backgroundColor = S.colorMyLeave; myOff.set(i, 'leave'); }
             });
 
-            // 3) other people off on any of my days off
+            // A MID: a worked shift starting at or after the MID hour ("2330", "M2130", "N1930$").
+            // Leave that covers a shift ("A<2330>") isn't a worked MID.
+            const midStart = store.get(settingKey('calendarExport', 'midStartHour'), MID_START_HOUR) ?? MID_START_HOUR;
+            const isMid = code => {
+                if (/^[A-Z]+<[^>]*>$/.test(code)) return false;
+                const m = code.match(/(\d{2})\d{2}/);
+                return !!m && Number(m[1]) >= midStart;
+            };
+
+            // 3) other people off on any of my days off, or coming off a MID that morning
             const offByCol = new Map([...myOff.keys()].map(i => [i, []]));
             rows.filter(r => isPerson(r) && r !== me).forEach(r => {
                 let shares = false;
                 myOff.forEach((_, i) => {
                     const td = r.cells[i];
                     const code = textOf(td);
+                    if (isMid(code)) {
+                        td.style.backgroundColor = S.colorMidOff;
+                        td.title = `${textOf(r.cells[0])}: MID ${code}, off that morning`;
+                        offByCol.get(i).push({ row: r, initials: initialsOf(r), name: textOf(r.cells[0]), code: 'MID', shift: code });
+                        return;
+                    }
                     if (!S.offCodes.includes(code)) return;
                     shares = true;
                     td.style.backgroundColor = code === 'LV' ? S.colorShareLeave : S.colorShareOff;
@@ -751,24 +772,33 @@
 
             const summary = h('table', { border: '1', style: 'margin:0 auto; border-collapse:collapse; text-align:center;' });
             const [trHead, trCount, trList] = [summary.insertRow(), summary.insertRow(), summary.insertRow()];
+            // How each kind of entry looks: off (X), on leave (LV), coming off a MID that morning
+            const CHIP = {
+                X:   { color: S.colorShareOff,   font: 'font-weight:bold;', suffix: '',       note: p => p.code },
+                LV:  { color: S.colorShareLeave, font: 'font-style:italic;', suffix: ' (LV)', note: p => p.code },
+                MID: { color: S.colorMidOff,     font: '',                  suffix: ' (MID)', note: p => `MID ${p.shift}, off that morning` },
+            };
+            const chipOf = p => CHIP[p.code] || CHIP.X;
+
             myOff.forEach((kind, i) => {
-                const people = offByCol.get(i);
+                // Fully off first, then MIDs
+                const people = offByCol.get(i).sort((a, b) => (a.code === 'MID') - (b.code === 'MID'));
+                const mids = people.filter(p => p.code === 'MID').length;
                 // Today's column gets a bold border, nothing more
                 const cellCss = baseCss + (i === todayCol ? 'border:3px solid #333;' : '');
                 trHead.append(h('td', { style: `${cellCss} font-weight:bold; background:${kind === 'leave' ? S.colorMyLeave : S.colorMyOff}` },
                     dayLabel(i) + (kind === 'leave' ? ' (A)' : '')));
-                trCount.append(h('td', { style: cellCss }, `${people.length} off`));
+                trCount.append(h('td', { style: cellCss }, `${people.length - mids} off` + (mids ? ` + ${mids} MID` : '')));
                 trList.append(h('td', { style: cellCss }, people.map(p => h('div', {
-                    title: `${p.name}: ${p.code} (click to jump to row)`,
+                    title: `${p.name}: ${chipOf(p).note(p)} (click to jump to row)`,
                     style: 'margin:2px 0; padding:1px 4px; cursor:pointer; border-radius:3px;' +
-                           `background:${p.code === 'LV' ? S.colorShareLeave : S.colorShareOff};` +
-                           (p.code === 'LV' ? 'font-style:italic;' : 'font-weight:bold;'),
+                           `background:${chipOf(p).color};` + chipOf(p).font,
                     onclick: () => {
                         p.row.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         p.row.tr.style.outline = '3px solid #ff9800';
                         setTimeout(() => (p.row.tr.style.outline = ''), 2000);
                     },
-                }, p.code === 'LV' ? `${p.initials} (LV)` : p.initials))));
+                }, p.initials + chipOf(p).suffix))));
             });
 
             table.before(h('div', { style: 'margin:8px auto 12px; width:98%; text-align:center;' },
@@ -785,9 +815,9 @@
 
         // Three places initials appear in WMT, from most to least common:
         //  1. A cell or link that is just the initials, maybe decorated:
-        //     "XY", "YZ$", "(XZ)", "(ZX-OM)", "XZ (LV)". It must be the element's
+        //     "XY", "YZ$", "(XZ)", "(ZX-OM)", "XZ (LV)", "XZ (MID)". It must be the element's
         //     whole content, so section headings like "OT" aren't matched.
-        const SOLO = /^\(?([A-Z]{2,3})(?:-[A-Z]+)?\)?\$?(?:\s*\(LV\))?$/;
+        const SOLO = /^\(?([A-Z]{2,3})(?:-[A-Z]+)?\)?\$?(?:\s*\((?:LV|MID)\))?$/;
         //  2. Text that starts with "XY - ": Schedule View names
         //     ("XY - Lastname, First") and shift notes ("YZ - OT List Exhausted")
         const PREFIX = /^\s*([A-Z]{2,3}) - /;
@@ -1247,8 +1277,8 @@
                          'Opening Views → Shift Legend saves the exact shift times it uses.',
             pages: [wmtPage('Views/MySchedule'), wmtPage('Views/ShiftLegend')],
             settings: [
-                { key: 'midStartHour', label: 'MID starts at or after hour', type: 'number', default: 19, min: 0, max: 23, step: 1,
-                  help: 'Shifts starting at this hour or later get the "MID" label. 19 also covers 1930 shifts.' },
+                { key: 'midStartHour', label: 'MID starts at or after hour', type: 'number', default: MID_START_HOUR, min: 0, max: 23, step: 1,
+                  help: 'Shifts starting at this hour or later count as MIDs (here and in the Schedule View helper). 19 also covers 1930 shifts.' },
                 { key: 'midStartsPreviousDay', label: 'Put MIDs on the night you go in', type: 'checkbox', default: true,
                   help: 'WMT lists a MID on the day it ends (Monday 2330 = in Sunday night).' },
                 { key: 'reminderMinutes', label: 'Reminder before shifts (minutes)', type: 'number', default: null, min: 0, step: 5,
