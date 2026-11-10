@@ -12,7 +12,7 @@ One userscript that adds features to WMT Scheduler. Each feature can be turned o
 | Calendar export | My Schedule | Preview your pay period and download it as `.ics` (Google, Outlook, Apple) or `.csv`. |
 | Auto sign-in | Sign-in pages | Off by default. Clicks through the warning page and fills in the sign-in. |
 
-## Install
+## [Install](https://raw.githubusercontent.com/blakskyy/WMTTools/main/WMTTools.user.js)
 
 1. Install the [Violentmonkey](https://violentmonkey.github.io/get-it/) browser extension (Chrome, Edge or Firefox).
 2. Open the raw `WMTTools.user.js` link. Violentmonkey shows an install page; click **Install**.
